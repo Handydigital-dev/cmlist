@@ -17,13 +17,23 @@ st.set_page_config(layout="wide")
 load_dotenv()
 
 # 環境変数の取得とバリデーション
-MYSQL_HOST = os.getenv('MYSQL_HOST', 'default_host')
-MYSQL_USER = os.getenv('MYSQL_USER', 'default_user')
-MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', 'default_password')
-MYSQL_DATABASE = os.getenv('MYSQL_DATABASE', 'default_db')
-EC2_HOSTNAME = os.getenv('EC2_HOSTNAME', '')
-EC2_USERNAME = os.getenv('EC2_USERNAME', '')
-EC2_PRIVATE_KEY = os.getenv('EC2_PRIVATE_KEY', '')
+MYSQL_HOST = os.getenv('MYSQL_HOST')
+MYSQL_USER = os.getenv('MYSQL_USER')
+MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD')
+MYSQL_DATABASE = os.getenv('MYSQL_DATABASE')
+EC2_HOSTNAME = os.getenv('EC2_HOSTNAME')
+EC2_USERNAME = os.getenv('EC2_USERNAME')
+EC2_PRIVATE_KEY = os.getenv('EC2_PRIVATE_KEY')
+
+# 環境変数のデバッグ出力
+st.write("MYSQL_HOST:", MYSQL_HOST)
+st.write("MYSQL_USER:", MYSQL_USER)
+st.write("MYSQL_PASSWORD:", MYSQL_PASSWORD)
+st.write("MYSQL_DATABASE:", MYSQL_DATABASE)
+st.write("EC2_HOSTNAME:", EC2_HOSTNAME)
+st.write("EC2_USERNAME:", EC2_USERNAME)
+st.write("EC2_PRIVATE_KEY:", EC2_PRIVATE_KEY[:10] + "..." if EC2_PRIVATE_KEY else "None")
+
 
 # 環境変数が設定されていない場合、エラーメッセージを表示して停止
 if not all([MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE, EC2_HOSTNAME, EC2_USERNAME, EC2_PRIVATE_KEY]):
