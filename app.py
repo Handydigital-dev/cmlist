@@ -25,14 +25,14 @@ EC2_HOSTNAME = os.getenv('EC2_HOSTNAME')
 EC2_USERNAME = os.getenv('EC2_USERNAME')
 EC2_PRIVATE_KEY = os.getenv('EC2_PRIVATE_KEY')
 
-# 環境変数のデバッグ出力
-st.write("MYSQL_HOST:", MYSQL_HOST)
-st.write("MYSQL_USER:", MYSQL_USER)
-st.write("MYSQL_PASSWORD:", MYSQL_PASSWORD)
-st.write("MYSQL_DATABASE:", MYSQL_DATABASE)
-st.write("EC2_HOSTNAME:", EC2_HOSTNAME)
-st.write("EC2_USERNAME:", EC2_USERNAME)
-st.write("EC2_PRIVATE_KEY:", EC2_PRIVATE_KEY[:10] + "..." if EC2_PRIVATE_KEY else "None")
+# # 環境変数のデバッグ出力
+# st.write("MYSQL_HOST:", MYSQL_HOST)
+# st.write("MYSQL_USER:", MYSQL_USER)
+# st.write("MYSQL_PASSWORD:", MYSQL_PASSWORD)
+# st.write("MYSQL_DATABASE:", MYSQL_DATABASE)
+# st.write("EC2_HOSTNAME:", EC2_HOSTNAME)
+# st.write("EC2_USERNAME:", EC2_USERNAME)
+# st.write("EC2_PRIVATE_KEY:", EC2_PRIVATE_KEY[:10] + "..." if EC2_PRIVATE_KEY else "None")
 
 
 # 環境変数が設定されていない場合、エラーメッセージを表示して停止
