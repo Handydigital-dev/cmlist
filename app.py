@@ -289,6 +289,7 @@ def connect_to_ec2_and_execute_query(selected_types, selected_genders, start_dat
 st.title('AICS競合リスト作成ツール')
 
 st.info('このアプリケーションは、タレントの広告出演情報を分類し、エクセルファイルとして出力します。')
+st.info('サイドバーに条件を入力して検索ボタンを押してください。条件検索とタレント検索は独立した検索になります。')
 st.warning('注意: 大きなデータセットの処理には時間がかかる場合があります。')
 
 correspondence = load_correspondence_table()
@@ -324,7 +325,7 @@ if '0' in selected_types and '1' in selected_types:
 selected_genders = st.sidebar.multiselect('性別を選択してください', options=list(gender_options.keys()), format_func=lambda x: gender_options[x])
 
 # 日付選択
-start_date = st.sidebar.date_input('開始日を選択してください', value=datetime(2023, 1, 1))
+start_date = st.sidebar.date_input('最終編集日を選択してください', value=datetime(2023, 1, 1))
 
 # 行数リミット選択
 row_limit = st.sidebar.number_input('取得する行数を入力してください', min_value=1, max_value=10000, value=1000, step=100)
