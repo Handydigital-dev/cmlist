@@ -298,7 +298,7 @@ if 'processed_data' not in st.session_state:
 if 'raw_talent_data' not in st.session_state:
     st.session_state.raw_talent_data = None
 
-st.sidebar.subheader('🌐 RDS MySQLからデータを取得')
+st.sidebar.subheader('🔍 AICSから条件で検索')
 
 # 個人/グループ選択
 type_options = {
@@ -329,7 +329,7 @@ start_date = st.sidebar.date_input('開始日を選択してください', value
 # 行数リミット選択
 row_limit = st.sidebar.number_input('取得する行数を入力してください', min_value=1, max_value=10000, value=1000, step=100)
 
-if st.sidebar.button('🚀 処理開始', key='process_button'):
+if st.sidebar.button('🔍 条件検索', key='condition_search_button'):
     progress_bar = st.sidebar.progress(0)
     status_text = st.sidebar.empty()
 
@@ -337,7 +337,7 @@ if st.sidebar.button('🚀 処理開始', key='process_button'):
     progress_bar.progress(10)
     time.sleep(0.5)
 
-    st.session_state.raw_talent_data = connect_to_ec2_and_execute_query(selected_types, selected_genders, start_date,row_limit)
+    st.session_state.raw_talent_data = connect_to_ec2_and_execute_query(selected_types, selected_genders, start_date, row_limit)
 
     if st.session_state.raw_talent_data is None:
         st.sidebar.error("データの取得に失敗しました。")
@@ -368,7 +368,7 @@ talent_names_input = st.sidebar.text_area("タレント名を入力してくだ�
                                           height=150,
                                           help="例:\nサンドウィッチマン\n大泉洋\n阿部寛\n堺雅人\nムロツヨシ\n福山雅治")
 
-if st.sidebar.button('🔍 タレント名で検索', key='search_by_name'):
+if st.sidebar.button('🔍 タレント名で検索', key='talent_search_button'):
     if talent_names_input:
         talent_names = [name.strip() for name in talent_names_input.split('\n') if name.strip()]
         if talent_names:
@@ -380,7 +380,7 @@ if st.sidebar.button('🔍 タレント名で検索', key='search_by_name'):
             time.sleep(0.5)
 
             st.session_state.raw_talent_data = connect_to_ec2_and_execute_query(
-                selected_types, selected_genders, start_date, len(talent_names), talent_names)
+                [], [], datetime(2000, 1, 1), len(talent_names), talent_names)
 
             if st.session_state.raw_talent_data is None:
                 st.sidebar.error("データの取得に失敗しました。")
@@ -409,8 +409,9 @@ if st.sidebar.button('🔍 タレント名で検索', key='search_by_name'):
     else:
         st.sidebar.warning("タレント名を入力してください。")
 
+# 検索結果の表示
 if st.session_state.processed_data is not None:
-    st.subheader('📊 処理結果')
+    st.subheader('📊 検索結果')
     
     df = st.session_state.processed_data
     page_size = 50
@@ -421,7 +422,7 @@ if st.session_state.processed_data is not None:
     st.write(f"全 {len(df)} 件中 {start_idx+1} - {min(end_idx, len(df))} 件を表示")
     st.dataframe(df.iloc[start_idx:end_idx], height=400)
 
-    st.subheader('📥 結果のダウンロード')
+    st.subheader('📥 検索結果のダウンロード')
     categories = df.columns[4:-1].tolist()  # Exclude 'タレント名', '年齢', '性別', '個人/グループ', and '事務所URL'
     selected_categories = st.multiselect('ダウンロードするカテゴリーを選択してください', categories, default=categories)
 
@@ -434,8 +435,8 @@ if st.session_state.processed_data is not None:
             )
         st.success('データの準備が完了しました。ダウンロードボタンが利用可能です。')
         st.download_button(
-            label="🔽 選択したカテゴリーの結果をダウンロード",
+            label="🔽 検索結果をダウンロード",
             data=filtered_output,
-            file_name="processed_output.xlsx",
+            file_name="search_output.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
