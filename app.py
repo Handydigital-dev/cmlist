@@ -1,5 +1,4 @@
 import streamlit as st
-import openpyxl
 import csv
 from collections import defaultdict
 import re
@@ -9,14 +8,15 @@ import time
 import paramiko
 import os
 from dotenv import load_dotenv
-import mysql.connector
+import openpyxl
+from datetime import datetime
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="AICS競合リスト作成ツール")
 
-# .envファイルから環境変数を読み込む
+# Load environment variables from .env file
 load_dotenv()
 
-# 環境変数の取得とバリデーション
+# Get and validate environment variables
 MYSQL_HOST = os.getenv('MYSQL_HOST')
 MYSQL_USER = os.getenv('MYSQL_USER')
 MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD')
@@ -25,22 +25,12 @@ EC2_HOSTNAME = os.getenv('EC2_HOSTNAME')
 EC2_USERNAME = os.getenv('EC2_USERNAME')
 EC2_PRIVATE_KEY = os.getenv('EC2_PRIVATE_KEY')
 
-# # 環境変数のデバッグ出力
-# st.write("MYSQL_HOST:", MYSQL_HOST)
-# st.write("MYSQL_USER:", MYSQL_USER)
-# st.write("MYSQL_PASSWORD:", MYSQL_PASSWORD)
-# st.write("MYSQL_DATABASE:", MYSQL_DATABASE)
-# st.write("EC2_HOSTNAME:", EC2_HOSTNAME)
-# st.write("EC2_USERNAME:", EC2_USERNAME)
-# st.write("EC2_PRIVATE_KEY:", EC2_PRIVATE_KEY[:10] + "..." if EC2_PRIVATE_KEY else "None")
-
-
-# 環境変数が設定されていない場合、エラーメッセージを表示して停止
+# Check if all required environment variables are set
 if not all([MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE, EC2_HOSTNAME, EC2_USERNAME, EC2_PRIVATE_KEY]):
     st.error("必須の環境変数が設定されていません。")
     st.stop()
 
-# スタイルの追加
+# Add styles
 st.markdown("""
 <style>
     .stButton>button {
@@ -63,37 +53,13 @@ def load_correspondence_table():
     try:
         with open('correspondenceTable.csv', 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
-            next(reader)  # ヘッダーをスキップ
+            next(reader)  # Skip header
             for row in reader:
                 input_category, output_category = row
                 correspondence[input_category.strip()] = output_category.strip()
     except Exception as e:
         st.error(f"対応表の読み込みに失敗しました: {str(e)}")
     return correspondence
-
-def parse_input_excel(file_content):
-    talent_data = {}
-    try:
-        wb = openpyxl.load_workbook(io.BytesIO(file_content))
-        ws = wb.active
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if len(row) >= 4:
-                talent_id, talent_name, age, ad_info = row[0], row[1], row[2], row[3]
-                talent_data[talent_name] = {'id': talent_id, 'age': age, 'ad_info': ad_info}
-    except Exception as e:
-        st.error(f"Excelファイルの解析に失敗しました: {str(e)}")
-    return talent_data
-
-def validate_excel_file(file_content):
-    try:
-        wb = openpyxl.load_workbook(io.BytesIO(file_content))
-        if 'Sheet1' not in wb.sheetnames:
-            st.error("アップロードされたExcelファイルに'Sheet1'がありません。")
-            return False
-        return True
-    except Exception as e:
-        st.error(f"Excelファイルの読み込みに失敗しました: {str(e)}")
-        return False
 
 def categorize_ads(ad_info, correspondence):
     categories = defaultdict(list)
@@ -110,25 +76,17 @@ def categorize_ads(ad_info, correspondence):
             category = category.strip()
             status = status.strip()
 
-            # デバッグ情報
-            #st.write(f"Processing category: {category}")
-
-            # 対応するカテゴリーを見つける
             output_category = 'その他'
             for input_cat, output_cat in correspondence.items():
-                if input_cat == category:  # 完全一致でチェック
+                if input_cat == category:
                     output_category = output_cat
                     break
-
-            # デバッグ情報
-            #st.write(f"Matched to output category: {output_category}")
 
             current_category = output_category
 
             if 'あり' in status:
                 process_status(status, current_category, categories)
         elif current_category and 'あり' in line:
-            # 前の行の続きの場合
             process_status(line, current_category, categories)
 
     return categories
@@ -142,7 +100,6 @@ def process_status(status, category, categories):
                 formatted_info = f"{brand.strip()}『{product.strip()}』"
                 categories[category].append(formatted_info)
         else:
-            # 『』がない場合はclient_infoをそのまま使用
             categories[category].append(client_info)
 
 def generate_output_excel(talent_data, correspondence, selected_categories=None):
@@ -161,26 +118,24 @@ def generate_output_excel(talent_data, correspondence, selected_categories=None)
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.append(['タレント名', '年齢'] + output_categories)
+    ws.append(['タレント名', '年齢', '性別', '個人/グループ'] + output_categories + ['事務所URL'])
 
     for talent_name, talent_info in talent_data.items():
-        row = [talent_name, talent_info['age']]
+        row = [talent_name, talent_info['age'], talent_info['gender'], talent_info['is_group']]
         ad_categories = categorize_ads(talent_info['ad_info'], correspondence)
         
         for category in output_categories:
             cell_content = '\n'.join(ad_categories[category])
-            # \r と \t を空白に置換
             cell_content = cell_content.replace('\\r', ' ').replace('\\t', ' ')
             row.append(cell_content)
         
+        row.append(talent_info['agency_url'])
         ws.append(row)
 
-    # セルの書式設定を調整
     for row in ws.iter_rows():
         for cell in row:
             cell.alignment = openpyxl.styles.Alignment(wrapText=True, vertical='top')
     
-    # 列幅の自動調整
     for column in ws.columns:
         max_length = 0
         column_letter = column[0].column_letter
@@ -200,11 +155,9 @@ def generate_output_excel(talent_data, correspondence, selected_categories=None)
 
 def execute_mysql_command(ssh_client, mysql_command):
     try:
-        # MySQLの設定ファイルを作成するコマンド
         create_config_command = (
             f"echo '[client]\nuser={MYSQL_USER}\npassword={MYSQL_PASSWORD}\nhost={MYSQL_HOST}' > ~/.my.cnf && chmod 600 ~/.my.cnf"
         )
-        # 設定ファイルを作成
         ssh_client.exec_command(create_config_command)
         stdin, stdout, stderr = ssh_client.exec_command(f"mysql --defaults-file=~/.my.cnf {MYSQL_DATABASE} -e \"{mysql_command}\"")
         
@@ -213,7 +166,7 @@ def execute_mysql_command(ssh_client, mysql_command):
 
         ssh_client.exec_command("rm ~/.my.cnf")
 
-        if error and "Warning" not in error:  # 警告以外のエラーがある場合
+        if error and "Warning" not in error:
             st.error(f"MySQLコマンド実行エラー: {error}")
             return None
         return result
@@ -221,9 +174,8 @@ def execute_mysql_command(ssh_client, mysql_command):
         st.error(f"MySQLコマンドの実行に失敗しました: {str(e)}")
         return None
 
-def connect_to_ec2_and_execute_query():
+def connect_to_ec2_and_execute_query(selected_types, selected_genders, start_date, row_limit, talent_names=None):
     try:
-        # 秘密鍵の一時ファイルを作成
         private_key_path = "/tmp/temp_key.pem"
         with open(private_key_path, "w") as key_file:
             key_file.write(EC2_PRIVATE_KEY)
@@ -235,13 +187,20 @@ def connect_to_ec2_and_execute_query():
 
         try:
             ssh_client.connect(hostname=EC2_HOSTNAME, username=EC2_USERNAME, key_filename=private_key_path)
-            st.write("EC2サーバーに接続しました。")
+            st.sidebar.success("EC2サーバーに接続しました。")
         except Exception as e:
-            st.error(f"EC2サーバーへの接続に失敗しました: {str(e)}")
+            st.sidebar.error(f"EC2サーバーへの接続に失敗しました: {str(e)}")
             return None
 
-        # MySQLクエリの構築
-        mysql_query = """
+        type_condition = "AND is_group IN ({})".format(", ".join(selected_types)) if selected_types else ""
+        gender_condition = "AND gender_cd IN ({})".format(", ".join(selected_genders)) if selected_genders else ""
+        
+        if talent_names:
+            name_condition = "AND name IN ({})".format(", ".join(f"'{name}'" for name in talent_names))
+        else:
+            name_condition = ""
+
+        mysql_query = f"""
         SELECT 
             id,
             name,
@@ -250,141 +209,150 @@ def connect_to_ec2_and_execute_query():
                (DATE_FORMAT(CURDATE(), '%m%d') < CONCAT(LPAD(born_date_mm, 2, '0'), LPAD(born_date_dd, 2, '0'))),
                 ''
             ) AS age,
-            memo_cm 
+            CASE
+                WHEN is_group = 0 THEN
+                    CASE
+                        WHEN gender_cd = 1 THEN '男性'
+                        WHEN gender_cd = 2 THEN '女性'
+                        WHEN gender_cd = 3 THEN 'その他'
+                        ELSE '不明'
+                    END
+                ELSE
+                    CASE
+                        WHEN gender_cd = 1 THEN '男性のみ'
+                        WHEN gender_cd = 2 THEN '女性のみ'
+                        WHEN gender_cd = 3 THEN '混成'
+                        ELSE '不明'
+                    END
+            END AS gender,
+            CASE
+                WHEN is_group = 0 THEN '個人'
+                ELSE 'グループ'
+            END AS is_group,
+            memo_cm,
+            other_blog_url
         FROM talents 
         WHERE deleted IS NULL 
-            AND modified >= '2023-01-01 00:00:00'
+            AND modified >= '{start_date}'
+            {type_condition}
+            {gender_condition}
+            {name_condition}
         ORDER BY
             total_score DESC,
             instagram_follower_count DESC,
             twitter_follower_count DESC,
             youtube_subscriber_count DESC,
             tiktok_follower_count DESC
-            LIMIT 100;
+            LIMIT {row_limit};
         """
 
-        # MySQLコマンドの実行
-        st.write("クエリを実行しています...")
+        st.sidebar.info("クエリを実行しています...")
         result = execute_mysql_command(ssh_client, mysql_query)
         
         if result is None:
-            st.error("クエリ結果が空です。")
+            st.sidebar.error("クエリ結果が空です。")
             return None
 
-        # 結果の処理
         lines = result.strip().split('\n')
         headers = lines[0].split('\t')
         data = [line.split('\t') for line in lines[1:]]
-        
+
         df = pd.DataFrame(data, columns=headers)
-        st.write(f"取得したレコード数: {len(df)}")
+        st.sidebar.success(f"取得したレコード数: {len(df)}")
 
-        # raw データの表示（デバッグ用）
-        st.write("Raw データ:")
-        st.write(df)
-
-        # データの処理と形式の変換
-        # なぜうまくいったかわからないが、
         talent_data = {}
         for _, row in df.iterrows():
             ad_info = row['memo_cm']
-            # 改行を \r\nに変換するとうまくいかないが下記だとうまくいく　理由不明
             ad_info = ad_info.replace('\\n', '\\r\n')
 
             talent_data[row['name']] = {
                 'id': row['id'],
                 'age': row['age'],
-                'ad_info': ad_info
+                'gender': row['gender'],
+                'is_group': row['is_group'],
+                'ad_info': ad_info,
+                'agency_url': row['other_blog_url']
             }
-
-        # 処理後のデータのサンプルを表示（デバッグ用）
-        # st.write("処理後のデータサンプル:")
-        # for name, info in list(talent_data.items())[:2]:
-        #     st.write(f"Name: {name}")
-        #     st.write(f"Age: {info['age']}")
-        #     st.write(f"Ad Info:\n{info['ad_info']}")
-        #     st.write("---")
 
         return talent_data
 
     except Exception as e:
-        st.error(f"予期せぬエラーが発生しました: {str(e)}")
+        st.sidebar.error(f"予期せぬエラーが発生しました: {str(e)}")
         return None
     finally:
         if ssh_client:
             ssh_client.close()
-            st.write("EC2サーバーとの接続を閉じました。")
-        # 秘密鍵の一時ファイルを削除
+            st.sidebar.info("EC2サーバーとの接続を閉じました。")
         if os.path.exists(private_key_path):
             os.remove(private_key_path)
 
-st.title('広告ジャンル分類処理アプリケーション')
+st.title('AICS競合リスト作成ツール')
+
+st.info('このアプリケーションは、タレントの広告出演情報を分類し、エクセルファイルとして出力します。')
+st.warning('注意: 大きなデータセットの処理には時間がかかる場合があります。')
 
 correspondence = load_correspondence_table()
 
-# correspondenceテーブルの内容を表示（デバッグ用）
-#st.write("Correspondence Table:")
-#st.write(correspondence)
-
-# セッション状態の初期化
 if 'processed_data' not in st.session_state:
     st.session_state.processed_data = None
 if 'raw_talent_data' not in st.session_state:
     st.session_state.raw_talent_data = None
 
-# データソースの選択
-data_source = st.radio(
-    "データソースを選択してください",
-    ('RDS MySQL', 'Excelファイル')
-)
+st.sidebar.subheader('🌐 RDS MySQLからデータを取得')
 
-if data_source == 'Excelファイル':
-    st.subheader('📁 base_input.xlsxをアップロード')
-    input_file = st.file_uploader("base_input.xlsxを選択してください", type="xlsx")
-else:
-    st.subheader('🌐 RDS MySQLからデータを取得')
-    input_file = None  # MySQLを使用する場合はinput_fileをNoneに設定
+# 個人/グループ選択
+type_options = {
+    '0': '個人',
+    '1': 'グループ'
+}
+selected_types = st.sidebar.multiselect('個人/グループを選択してください', options=list(type_options.keys()), format_func=lambda x: type_options[x])
 
-if (input_file is not None or data_source == 'RDS MySQL') and st.session_state.processed_data is None:
-    if st.button('🚀 処理開始', key='process_button'):
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+# 性別選択
+gender_options = {
+    '1': '男性' if '0' in selected_types else '男性のみ',
+    '2': '女性' if '0' in selected_types else '女性のみ',
+    '3': 'その他' if '0' in selected_types else '混成'
+}
 
-        # 処理開始
-        status_text.text('処理を開始しています...')
-        progress_bar.progress(10)
-        time.sleep(0.5)
+if '0' in selected_types and '1' in selected_types:
+    gender_options = {
+        '1': '男性/男性のみ',
+        '2': '女性/女性のみ',
+        '3': 'その他/混成'
+    }
 
-        if data_source == 'Excelファイル':
-            if validate_excel_file(input_file.read()):
-                st.session_state.raw_talent_data = parse_input_excel(input_file.read())
-        else:
-            st.session_state.raw_talent_data = connect_to_ec2_and_execute_query()
+selected_genders = st.sidebar.multiselect('性別を選択してください', options=list(gender_options.keys()), format_func=lambda x: gender_options[x])
 
-        if st.session_state.raw_talent_data is None:
-            st.error("データの取得に失敗しました。")
-            status_text.empty()
-            progress_bar.empty()
-            st.stop()
+# 日付選択
+start_date = st.sidebar.date_input('開始日を選択してください', value=datetime(2023, 1, 1))
 
+# 行数リミット選択
+row_limit = st.sidebar.number_input('取得する行数を入力してください', min_value=1, max_value=10000, value=1000, step=100)
+
+if st.sidebar.button('🚀 処理開始', key='process_button'):
+    progress_bar = st.sidebar.progress(0)
+    status_text = st.sidebar.empty()
+
+    status_text.text('処理を開始しています...')
+    progress_bar.progress(10)
+    time.sleep(0.5)
+
+    st.session_state.raw_talent_data = connect_to_ec2_and_execute_query(selected_types, selected_genders, start_date,row_limit)
+
+    if st.session_state.raw_talent_data is None:
+        st.sidebar.error("データの取得に失敗しました。")
+        status_text.empty()
+        progress_bar.empty()
+    else:
         status_text.text('データを解析しています...')
         progress_bar.progress(40)
         time.sleep(0.5)
-
-        # データのサンプルを表示（デバッグ用）
-        # st.write("取得したデータのサンプル:")
-        # for name, info in list(st.session_state.raw_talent_data.items())[:5]:
-        #     st.write(f"Name: {name}")
-        #     st.write(f"Age: {info['age']}")
-        #     st.write(f"Ad Info: {info['ad_info']}")
-        #     st.write("---")
 
         output = generate_output_excel(st.session_state.raw_talent_data, correspondence)
         status_text.text('結果を生成しています...')
         progress_bar.progress(70)
         time.sleep(0.5)
 
-        # 結果の表示
         df = pd.read_excel(output)
         st.session_state.processed_data = df
         status_text.text('処理が完了しました。結果を表示しています...')
@@ -394,10 +362,56 @@ if (input_file is not None or data_source == 'RDS MySQL') and st.session_state.p
         status_text.empty()
         progress_bar.empty()
 
+# タレント名直接指定フォーム
+st.sidebar.subheader('🎭 タレント名で直接検索')
+talent_names_input = st.sidebar.text_area("タレント名を入力してください（1行に1人）", 
+                                          height=150,
+                                          help="例:\nサンドウィッチマン\n大泉洋\n阿部寛\n堺雅人\nムロツヨシ\n福山雅治")
+
+if st.sidebar.button('🔍 タレント名で検索', key='search_by_name'):
+    if talent_names_input:
+        talent_names = [name.strip() for name in talent_names_input.split('\n') if name.strip()]
+        if talent_names:
+            progress_bar = st.sidebar.progress(0)
+            status_text = st.sidebar.empty()
+
+            status_text.text('タレント名で検索しています...')
+            progress_bar.progress(10)
+            time.sleep(0.5)
+
+            st.session_state.raw_talent_data = connect_to_ec2_and_execute_query(
+                selected_types, selected_genders, start_date, len(talent_names), talent_names)
+
+            if st.session_state.raw_talent_data is None:
+                st.sidebar.error("データの取得に失敗しました。")
+                status_text.empty()
+                progress_bar.empty()
+            else:
+                status_text.text('データを解析しています...')
+                progress_bar.progress(40)
+                time.sleep(0.5)
+
+                output = generate_output_excel(st.session_state.raw_talent_data, correspondence)
+                status_text.text('結果を生成しています...')
+                progress_bar.progress(70)
+                time.sleep(0.5)
+
+                df = pd.read_excel(output)
+                st.session_state.processed_data = df
+                status_text.text('処理が完了しました。結果を表示しています...')
+                progress_bar.progress(100)
+                time.sleep(0.5)
+
+                status_text.empty()
+                progress_bar.empty()
+        else:
+            st.sidebar.warning("有効なタレント名が入力されていません。")
+    else:
+        st.sidebar.warning("タレント名を入力してください。")
+
 if st.session_state.processed_data is not None:
     st.subheader('📊 処理結果')
     
-    # ページネーション機能の追加
     df = st.session_state.processed_data
     page_size = 50
     page_number = st.number_input('ページ番号', min_value=1, max_value=len(df)//page_size + 1, value=1)
@@ -407,9 +421,8 @@ if st.session_state.processed_data is not None:
     st.write(f"全 {len(df)} 件中 {start_idx+1} - {min(end_idx, len(df))} 件を表示")
     st.dataframe(df.iloc[start_idx:end_idx], height=400)
 
-# カテゴリー選択
     st.subheader('📥 結果のダウンロード')
-    categories = df.columns[2:].tolist()  # タレント名と年齢を除外
+    categories = df.columns[4:-1].tolist()  # Exclude 'タレント名', '年齢', '性別', '個人/グループ', and '事務所URL'
     selected_categories = st.multiselect('ダウンロードするカテゴリーを選択してください', categories, default=categories)
 
     if selected_categories:
@@ -426,7 +439,3 @@ if st.session_state.processed_data is not None:
             file_name="processed_output.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
-st.sidebar.title('📌 アプリケーション情報')
-st.sidebar.info('このアプリケーションは、タレントの広告出演情報を分類し、エクセルファイルとして出力します。')
-st.sidebar.warning('注意: 大きなファイルの処理には時間がかかる場合があります。')
